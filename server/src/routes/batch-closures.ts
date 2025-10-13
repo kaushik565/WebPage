@@ -8,23 +8,63 @@ import {
 
 type FlowSummary = Record<string, number> | null;
 
-let supportsFlowSummaryColumn: boolean | null = null;
+let batchClosureColumnsCache: Set<string> | null = null;
 
-const ensureFlowSummarySupport = async () => {
-  if (supportsFlowSummaryColumn !== null) {
-    return supportsFlowSummaryColumn;
+const loadBatchClosureColumns = async () => {
+  if (batchClosureColumnsCache) {
+    return batchClosureColumnsCache;
   }
 
   try {
     const tableInfo = (await prisma.$queryRawUnsafe<any[]>("PRAGMA table_info('batch_closures')")) ?? [];
-    supportsFlowSummaryColumn = tableInfo.some((column) => column?.name === "flow_summary");
+    batchClosureColumnsCache = new Set(
+      tableInfo
+        .map((column) => (column?.name ? String(column.name) : null))
+        .filter((name): name is string => Boolean(name))
+    );
   } catch (error) {
-    console.error("Unable to determine flow_summary column support", error);
-    supportsFlowSummaryColumn = false;
+    console.error("Unable to determine batch_closures columns", error);
+    batchClosureColumnsCache = new Set();
   }
 
-  return supportsFlowSummaryColumn;
+  return batchClosureColumnsCache;
 };
+
+const invalidateBatchClosureColumnsCache = () => {
+  batchClosureColumnsCache = null;
+};
+
+const ensureBatchClosureColumn = async (
+  columnName: string,
+  onMissing?: () => Promise<void>
+): Promise<boolean> => {
+  const columns = await loadBatchClosureColumns();
+  if (columns.has(columnName)) {
+    return true;
+  }
+
+  if (!onMissing) {
+    return false;
+  }
+
+  try {
+    await onMissing();
+  } catch (error) {
+    console.error(`Unable to add missing column "${columnName}" to batch_closures table`, error);
+    return false;
+  }
+
+  invalidateBatchClosureColumnsCache();
+  const refreshedColumns = await loadBatchClosureColumns();
+  return refreshedColumns.has(columnName);
+};
+
+const ensureFlowSummarySupport = async () => ensureBatchClosureColumn("flow_summary");
+
+const ensureLineColumnSupport = async () =>
+  ensureBatchClosureColumn("line", async () => {
+    await prisma.$executeRawUnsafe('ALTER TABLE "batch_closures" ADD COLUMN "line" TEXT');
+  });
 
 const normaliseDetailTotals = (detailTotals: any, detailRows: Array<any>) => {
   if (detailTotals) {
@@ -67,6 +107,13 @@ const router = Router();
 
 router.get("/", async (_req, res, next) => {
   try {
+    const hasLineColumn = await ensureLineColumnSupport();
+    if (!hasLineColumn) {
+      return res.status(500).json({
+        message: "Batch closure schema is missing the `line` column. Please apply the latest database migrations."
+      });
+    }
+
     const closures = await prisma.batchClosure.findMany({
       orderBy: { productionDate: "desc" }
     });
@@ -78,6 +125,13 @@ router.get("/", async (_req, res, next) => {
 
 router.get("/:id", async (req, res, next) => {
   try {
+    const hasLineColumn = await ensureLineColumnSupport();
+    if (!hasLineColumn) {
+      return res.status(500).json({
+        message: "Batch closure schema is missing the `line` column. Please apply the latest database migrations."
+      });
+    }
+
     const params = idParamSchema.parse(req.params);
     const closure = await prisma.batchClosure.findUnique({
       where: { id: params.id }
@@ -94,6 +148,13 @@ router.get("/:id", async (req, res, next) => {
 router.post("/", async (req, res, next) => {
   try {
     const payload = createBatchClosureSchema.parse(req.body);
+
+    const hasLineColumn = await ensureLineColumnSupport();
+    if (!hasLineColumn) {
+      return res.status(500).json({
+        message: "Batch closure schema is missing the `line` column. Please apply the latest database migrations."
+      });
+    }
 
     const parsedDetailRows = (payload.detailRows ?? []).filter((row: any) => {
       const numericValues = [row.dumpInsertion, row.acceptedOutput, row.rejections, row.annealing];
@@ -130,7 +191,8 @@ router.post("/", async (req, res, next) => {
 
     // Prisma Client in this repository was generated without the optional `line` field,
     // so we assign it dynamically to avoid type errors while still persisting the value.
-    createData.line = payload.line ?? null;
+    const derivedLine = payload.line ?? deriveLineFromBatchNumber(payload.batchNumber);
+    createData.line = derivedLine || null;
 
     if (shouldPersistFlowSummary) {
       createData.flowSummary = flowSummaryForStorage ? JSON.stringify(flowSummaryForStorage) : null;
@@ -148,6 +210,13 @@ router.post("/", async (req, res, next) => {
 
 router.patch("/:id/qc", async (req, res, next) => {
   try {
+    const hasLineColumn = await ensureLineColumnSupport();
+    if (!hasLineColumn) {
+      return res.status(500).json({
+        message: "Batch closure schema is missing the `line` column. Please apply the latest database migrations."
+      });
+    }
+
     const params = idParamSchema.parse(req.params);
     const payload = updateQcSummarySchema.parse(req.body);
 
@@ -218,6 +287,15 @@ router.patch("/:id/qc", async (req, res, next) => {
 
 export default router;
 
+function deriveLineFromBatchNumber(batchNumber: unknown) {
+  if (typeof batchNumber !== "string" || batchNumber.length < 3) {
+    return "";
+  }
+
+  const candidate = batchNumber[2];
+  return /[A-Z]/i.test(candidate) ? candidate.toUpperCase() : "";
+}
+
 function serializeClosure(closure: any) {
   const componentSummary = parseJson(closure.componentSummary);
   if (componentSummary) {
@@ -239,7 +317,7 @@ function serializeClosure(closure: any) {
     batchNumber: closure.batchNumber,
     lotLabel: closure.lotLabel,
     lotNumber: closure.lotNumber,
-    line: closure.line ?? stageData?.line ?? "",
+    line: closure.line ?? stageData?.line ?? deriveLineFromBatchNumber(closure.batchNumber),
     closureGivenBy: closure.closureGivenBy,
     shift: closure.shift,
     productionDate:
