@@ -32,7 +32,7 @@ export const createRejectionSchema = z
   })
   .superRefine((data, ctx) => {
     const requiresEquipmentSelection = data.stage === "VI-1";
-    const allowedEquipment = lineEquipments[data.line];
+    const allowedEquipment = lineEquipments[data.line] as readonly string[];
 
     if (requiresEquipmentSelection) {
       if (!allowedEquipment.includes(data.equipmentId)) {
@@ -50,7 +50,7 @@ export const createRejectionSchema = z
       });
     }
 
-    const allowedRejectionTypes = stageRejectionTypes[data.stage];
+    const allowedRejectionTypes = stageRejectionTypes[data.stage] as readonly string[];
     if (!allowedRejectionTypes.includes(data.rejectionType)) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
