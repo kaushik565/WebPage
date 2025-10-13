@@ -76,6 +76,21 @@ const componentTotalsSchema = z.object({
   inlineChildRejections: z.coerce.number().nonnegative().default(0)
 });
 
+const flowSummarySchema = z
+  .object({
+    initialBatchQuantity: z.coerce.number().nonnegative().optional(),
+    dumpRejections: z.coerce.number().nonnegative().optional(),
+    remainingForMatrix: z.coerce.number().nonnegative().optional(),
+    remainingForNextStage: z.coerce.number().nonnegative().optional(),
+    matrixInput: z.coerce.number().nonnegative().optional(),
+    matrixRejections: z.coerce.number().nonnegative().optional(),
+    pouchOutput: z.coerce.number().nonnegative().optional(),
+    qcConsumed: z.coerce.number().nonnegative().optional(),
+    qcRetained: z.coerce.number().nonnegative().optional(),
+    dispatchQuantity: z.coerce.number().nonnegative().optional()
+  })
+  .optional();
+
 const dumpDetailRowSchema = z.object({
   dumpInsertion: z.coerce.number().nonnegative().default(0),
   acceptedOutput: z.coerce.number().nonnegative().default(0),
@@ -119,6 +134,15 @@ const matrixDetailRowSchema = z.object({
   yieldPercent: z.coerce.number().nonnegative().default(0)
 });
 
+const matrixQcSummarySchema = z
+  .object({
+    totalOutputForQc: z.coerce.number().nonnegative().optional(),
+    qcConsumed: z.coerce.number().nonnegative().default(0),
+    qcRetained: z.coerce.number().nonnegative().default(0),
+    dispatchQuantity: z.coerce.number().nonnegative().default(0)
+  })
+  .optional();
+
 const matrixStageDataSchema = z.object({
   cartridgeType: z.enum(["NC", "L", "LR", "UNKNOWN"]),
   line: z.enum(lines),
@@ -146,9 +170,13 @@ const matrixStageDataSchema = z.object({
     .object({
       totalAccepted: z.coerce.number().nonnegative().optional(),
       totalOutput: z.coerce.number().nonnegative().optional(),
-      totalRejections: z.coerce.number().nonnegative().optional()
+      totalRejections: z.coerce.number().nonnegative().optional(),
+      matrixInput: z.coerce.number().nonnegative().optional(),
+      pouchOutput: z.coerce.number().nonnegative().optional(),
+      remainingForNextStage: z.coerce.number().nonnegative().optional()
     })
-    .optional()
+    .optional(),
+  qcSummary: matrixQcSummarySchema
 });
 
 export const createBatchClosureSchema = z
@@ -188,9 +216,12 @@ export const createBatchClosureSchema = z
         dumpInsertion: z.coerce.number().nonnegative().optional(),
         acceptedOutput: z.coerce.number().nonnegative().optional(),
         rejections: z.coerce.number().nonnegative().optional(),
-        annealing: z.coerce.number().nonnegative().optional()
+        annealing: z.coerce.number().nonnegative().optional(),
+        remainingForNextStage: z.coerce.number().nonnegative().optional(),
+        batchInput: z.coerce.number().nonnegative().optional()
       })
       .optional(),
+    flowSummary: flowSummarySchema,
     stageData: matrixStageDataSchema.optional()
   })
   .superRefine((data, ctx) => {
@@ -214,3 +245,9 @@ export const createBatchClosureSchema = z
       }
     }
   });
+
+export const updateQcSummarySchema = z.object({
+  qcConsumed: z.coerce.number().nonnegative(),
+  qcRetained: z.coerce.number().nonnegative(),
+  totalOutput: z.coerce.number().nonnegative().optional()
+});

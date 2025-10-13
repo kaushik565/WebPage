@@ -201,7 +201,8 @@ function MatrixClosureForm({ batchNumber, line, cartridgeType, lotIndex, onSubmi
     handleSubmit,
     reset,
     formState: { errors },
-    watch
+    watch,
+    setValue
   } = useForm<MatrixClosureFormValues>({
     defaultValues: computedDefaults
   });
@@ -274,6 +275,10 @@ function MatrixClosureForm({ batchNumber, line, cartridgeType, lotIndex, onSubmi
       return;
     }
 
+    const totalOutput = Number(values.totalOutput) || 0;
+    const matrixRejections = Number(values.totalRejections) || 0;
+    const matrixInput = Number(values.batchQuantity) || 0;
+
     const detailRows = values.detailRows
       .map((row) => ({
         totalAccepted: Number(row.totalAccepted) || 0,
@@ -342,8 +347,11 @@ function MatrixClosureForm({ batchNumber, line, cartridgeType, lotIndex, onSubmi
       detailRows,
       totals: {
         totalAccepted: Number(values.totalAccepted) || 0,
-        totalOutput: Number(values.totalOutput) || 0,
-        totalRejections: Number(values.totalRejections) || 0
+        totalOutput,
+        totalRejections: matrixRejections,
+        matrixInput,
+        pouchOutput: totalOutput,
+        remainingForNextStage: totalOutput
       }
     };
 
@@ -357,19 +365,29 @@ function MatrixClosureForm({ batchNumber, line, cartridgeType, lotIndex, onSubmi
       shift: values.shift,
       productionDate: format(parsedDate, "yyyy-MM-dd"),
       totalAccepted: Number(values.totalAccepted) || 0,
-      totalAnnealing: Number(values.totalOutput) || 0,
-      totalRejections: Number(values.totalRejections) || 0,
+      totalAnnealing: totalOutput,
+      totalRejections: matrixRejections,
       batchQuantity: Number(values.batchQuantity) || undefined,
       remarks: values.remarks || undefined,
       componentSummary: undefined,
       detailRows: [],
-      stageData
+      stageData,
+      flowSummary: {
+        matrixInput: matrixInput || undefined,
+        matrixRejections: matrixRejections || undefined,
+        pouchOutput: totalOutput || undefined,
+        remainingForMatrix: matrixInput || undefined,
+        remainingForNextStage: totalOutput || undefined
+      }
     };
 
     mutation.mutate(payload);
   };
 
-  const detailRowsWatch = watch("detailRows") ?? [];
+  const detailRowsWatch = (watch("detailRows", []) as MatrixDetailRow[] | undefined) ?? [];
+  const totalAcceptedField = watch("totalAccepted") as number | string | undefined;
+  const totalOutputField = watch("totalOutput") as number | string | undefined;
+  const totalRejectionsField = watch("totalRejections") as number | string | undefined;
 
   const detailTotals = detailRowsWatch.reduce(
     (acc, row) => ({
@@ -393,6 +411,31 @@ function MatrixClosureForm({ batchNumber, line, cartridgeType, lotIndex, onSubmi
       output: 0
     }
   );
+
+  useEffect(() => {
+    const totalAccepted = detailTotals.totalAccepted || 0;
+    if (Number(totalAcceptedField ?? 0) !== totalAccepted) {
+      setValue("totalAccepted", totalAccepted, { shouldDirty: true, shouldValidate: false });
+    }
+
+    const totalOutput = detailTotals.output || 0;
+    if (Number(totalOutputField ?? 0) !== totalOutput) {
+      setValue("totalOutput", totalOutput, { shouldDirty: true, shouldValidate: false });
+    }
+
+    const totalRejections = detailTotals.rejection || 0;
+    if (Number(totalRejectionsField ?? 0) !== totalRejections) {
+      setValue("totalRejections", totalRejections, { shouldDirty: true, shouldValidate: false });
+    }
+  }, [
+    detailTotals.output,
+    detailTotals.rejection,
+    detailTotals.totalAccepted,
+    setValue,
+    totalAcceptedField,
+    totalOutputField,
+    totalRejectionsField
+  ]);
 
   return (
     <Card>
@@ -536,13 +579,19 @@ function MatrixClosureForm({ batchNumber, line, cartridgeType, lotIndex, onSubmi
                   />
                 </Grid>
                 <Grid xs={12} md={4}>
-                  <Controller
-                    name="batchQuantity"
-                    control={control}
-                    render={({ field }) => (
-                      <TextField {...field} type="number" label="Batch Quantity" fullWidth />
-                    )}
-                  />
+                    <Controller
+                      name="batchQuantity"
+                      control={control}
+                      render={({ field }) => (
+                        <TextField
+                          {...field}
+                          type="number"
+                          label="Input Quantity"
+                          helperText="Quantity received from dump stage"
+                          fullWidth
+                        />
+                      )}
+                    />
                 </Grid>
                 <Grid xs={12}>
                   <Controller
@@ -795,14 +844,14 @@ function MatrixClosureForm({ batchNumber, line, cartridgeType, lotIndex, onSubmi
                       </TableRow>
                     ))}
                     <TableRow sx={{ bgcolor: "rgba(0,0,0,0.04)" }}>
-                      <TableCell><strong>{detailTotals.totalAccepted}</strong></TableCell>
-                      <TableCell><strong>{detailTotals.vi02}</strong></TableCell>
-                      <TableCell><strong>{detailTotals.vi03}</strong></TableCell>
-                      <TableCell><strong>{detailTotals.vacuum}</strong></TableCell>
-                      <TableCell><strong>{detailTotals.vi04}</strong></TableCell>
-                      <TableCell><strong>{detailTotals.vi04Rework}</strong></TableCell>
-                      <TableCell><strong>{detailTotals.rejection}</strong></TableCell>
-                      <TableCell><strong>{detailTotals.output}</strong></TableCell>
+                      <TableCell><strong>{detailTotals.totalAccepted ?? 0}</strong></TableCell>
+                      <TableCell><strong>{detailTotals.vi02 ?? 0}</strong></TableCell>
+                      <TableCell><strong>{detailTotals.vi03 ?? 0}</strong></TableCell>
+                      <TableCell><strong>{detailTotals.vacuum ?? 0}</strong></TableCell>
+                      <TableCell><strong>{detailTotals.vi04 ?? 0}</strong></TableCell>
+                      <TableCell><strong>{detailTotals.vi04Rework ?? 0}</strong></TableCell>
+                      <TableCell><strong>{detailTotals.rejection ?? 0}</strong></TableCell>
+                      <TableCell><strong>{detailTotals.output ?? 0}</strong></TableCell>
                       <TableCell>
                         <Typography variant="subtitle2">Totals</Typography>
                       </TableCell>

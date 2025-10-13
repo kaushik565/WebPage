@@ -1,6 +1,10 @@
 import { Router } from "express";
 import { prisma } from "../prisma.js";
-import { createBatchClosureSchema, idParamSchema } from "../validation.js";
+import {
+  createBatchClosureSchema,
+  idParamSchema,
+  updateQcSummarySchema
+} from "../validation.js";
 
 const router = Router();
 
@@ -61,11 +65,77 @@ router.post("/", async (req, res, next) => {
         componentSummary: payload.componentSummary ? JSON.stringify(payload.componentSummary) : null,
         detailRows: parsedDetailRows.length ? JSON.stringify(parsedDetailRows) : null,
         detailTotals: payload.detailTotals ? JSON.stringify(payload.detailTotals) : null,
+        flowSummary: payload.flowSummary ? JSON.stringify(payload.flowSummary) : null,
         stageData: payload.stageData ? JSON.stringify(payload.stageData) : null
       }
     });
 
     res.status(201).json(serializeClosure(closure));
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.patch("/:id/qc", async (req, res, next) => {
+  try {
+    const params = idParamSchema.parse(req.params);
+    const payload = updateQcSummarySchema.parse(req.body);
+
+    const closure = await prisma.batchClosure.findUnique({
+      where: { id: params.id }
+    });
+
+    if (!closure) {
+      return res.status(404).json({ message: "Batch closure not found" });
+    }
+
+    if (closure.stageType !== "MatrixToPouch") {
+      return res.status(400).json({ message: "QC summary can only be updated for Matrix to Pouch stage" });
+    }
+
+    const stageData = closure.stageData ? JSON.parse(closure.stageData) : {};
+    const totals = stageData?.totals ?? {};
+
+    const totalOutput = Number(payload.totalOutput ?? totals.totalOutput ?? closure.totalAnnealing ?? 0);
+    const qcConsumed = Number(payload.qcConsumed ?? 0);
+    const qcRetained = Number(payload.qcRetained ?? 0);
+    const dispatchQuantity = Math.max(totalOutput - qcConsumed - qcRetained, 0);
+
+    const updatedStageData = {
+      ...stageData,
+      totals: {
+        ...totals,
+        totalOutput,
+        pouchOutput: totalOutput,
+        remainingForNextStage: totalOutput
+      },
+      qcSummary: {
+        totalOutputForQc: totalOutput,
+        qcConsumed,
+        qcRetained,
+        dispatchQuantity
+      }
+    };
+
+    const flowSummary = closure.flowSummary ? JSON.parse(closure.flowSummary) : {};
+    const updatedFlowSummary = {
+      ...flowSummary,
+      pouchOutput: totalOutput,
+      qcConsumed,
+      qcRetained,
+      dispatchQuantity
+    };
+
+    const updated = await prisma.batchClosure.update({
+      where: { id: params.id },
+      data: {
+        totalAnnealing: totalOutput,
+        stageData: JSON.stringify(updatedStageData),
+        flowSummary: JSON.stringify(updatedFlowSummary)
+      }
+    });
+
+    res.json(serializeClosure(updated));
   } catch (error) {
     next(error);
   }
@@ -85,6 +155,7 @@ function serializeClosure(closure: any) {
   const detailRows = closure.detailRows ? JSON.parse(closure.detailRows) : null;
   const detailTotals = closure.detailTotals ? JSON.parse(closure.detailTotals) : null;
   const stageData = closure.stageData ? JSON.parse(closure.stageData) : null;
+  const flowSummary = closure.flowSummary ? JSON.parse(closure.flowSummary) : null;
 
   return {
     id: closure.id,
@@ -113,6 +184,7 @@ function serializeClosure(closure: any) {
     detailRows,
     detailTotals,
     stageData,
+    flowSummary,
     createdAt: closure.createdAt instanceof Date ? closure.createdAt.toISOString() : closure.createdAt,
     updatedAt: closure.updatedAt instanceof Date ? closure.updatedAt.toISOString() : closure.updatedAt
   };

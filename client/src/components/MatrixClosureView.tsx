@@ -21,6 +21,7 @@ const MatrixClosureView = ({ closure, disablePaper = false }: Props) => {
   const lotTitle = closure.lotLabel ? `Lot ${closure.lotLabel}` : `Lot ${closure.lotNumber ?? ""}`;
   const stageData = (closure.stageData ?? null) as MatrixStageData | null;
   const detailRows = (stageData?.detailRows ?? []) as MatrixDetailRow[];
+  const flowSummary = closure.flowSummary ?? null;
   const detailAggregate = detailRows.reduce(
     (acc, row) => ({
       totalAccepted: acc.totalAccepted + Number(row.totalAccepted || 0),
@@ -50,6 +51,23 @@ const MatrixClosureView = ({ closure, disablePaper = false }: Props) => {
             detailRows.length
         )
       : 0;
+  const totalOutputValue = Number(
+    stageData?.totals?.totalOutput ?? flowSummary?.pouchOutput ?? closure.totalAnnealing ?? 0
+  );
+  const qcConsumed = Number(
+    flowSummary?.qcConsumed ?? stageData?.qcSummary?.qcConsumed ?? 0
+  );
+  const qcRetained = Number(
+    flowSummary?.qcRetained ?? stageData?.qcSummary?.qcRetained ?? 0
+  );
+  const qcDispatch =
+    flowSummary?.dispatchQuantity ??
+    stageData?.qcSummary?.dispatchQuantity ??
+    Math.max(totalOutputValue - qcConsumed - qcRetained, 0);
+  const qcInput = stageData?.qcSummary?.totalOutputForQc ?? totalOutputValue;
+  const hasQcRecord = Boolean(
+    stageData?.qcSummary || flowSummary?.qcConsumed !== undefined || flowSummary?.qcRetained !== undefined
+  );
 
   const content = (
     <Stack spacing={3}>
@@ -239,6 +257,40 @@ const MatrixClosureView = ({ closure, disablePaper = false }: Props) => {
             )}
 
             <Stack spacing={1}>
+              <Typography variant="subtitle1">Stage Flow Summary</Typography>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Metric</TableCell>
+                    <TableCell align="right">Quantity</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  <TableRow>
+                    <TableCell>Matrix Input</TableCell>
+                    <TableCell align="right">
+                      {Number(flowSummary?.matrixInput ?? stageData?.totals?.matrixInput ?? closure.batchQuantity ?? 0)}
+                    </TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell>Matrix Rejections</TableCell>
+                    <TableCell align="right">
+                      {Number(flowSummary?.matrixRejections ?? stageData?.totals?.totalRejections ?? closure.totalRejections ?? 0)}
+                    </TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell>Pouch Output</TableCell>
+                    <TableCell align="right">{totalOutputValue}</TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell>Dispatch Ready</TableCell>
+                    <TableCell align="right">{qcDispatch}</TableCell>
+                  </TableRow>
+                </TableBody>
+              </Table>
+            </Stack>
+
+            <Stack spacing={1}>
               <Typography variant="subtitle1">Rejection Stages</Typography>
               <Table size="small">
                 <TableHead>
@@ -268,6 +320,40 @@ const MatrixClosureView = ({ closure, disablePaper = false }: Props) => {
                   })}
                 </TableBody>
               </Table>
+            </Stack>
+
+            <Stack spacing={1}>
+              <Typography variant="subtitle1">QC Summary</Typography>
+              {hasQcRecord ? (
+                <Table size="small">
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>Metric</TableCell>
+                      <TableCell align="right">Quantity</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    <TableRow>
+                      <TableCell>Total Output to QC</TableCell>
+                      <TableCell align="right">{qcInput}</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell>QC Consumed</TableCell>
+                      <TableCell align="right">{qcConsumed}</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell>QC Retained</TableCell>
+                      <TableCell align="right">{qcRetained}</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell>Dispatch Quantity</TableCell>
+                      <TableCell align="right">{qcDispatch}</TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              ) : (
+                <Alert severity="info">QC team has not updated consumed/retained counts for this lot yet.</Alert>
+              )}
             </Stack>
 
             <Stack spacing={1}>

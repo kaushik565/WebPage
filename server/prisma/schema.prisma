@@ -46,6 +46,7 @@ model BatchClosure {
   componentSummary       String?   @map("component_summary")
   detailRows             String?   @map("detail_rows")
   detailTotals           String?   @map("detail_totals")
+  flowSummary            String?   @map("flow_summary")
   stageData              String?   @map("stage_data")
   createdAt              DateTime  @default(now()) @map("created_at")
   updatedAt              DateTime  @updatedAt @map("updated_at")

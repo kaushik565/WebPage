@@ -6,6 +6,7 @@ import DashboardPage from "./pages/DashboardPage.tsx";
 import RejectionFormPage from "./pages/RejectionFormPage.tsx";
 import BatchClosurePage from "./pages/BatchClosurePage.tsx";
 import DispatchDetailsPage from "./pages/DispatchDetailsPage.tsx";
+import QcIntakePage from "./pages/QcIntakePage.tsx";
 
 type UserRole = "QA" | "QC" | "Production";
 const ROLE_STORAGE_KEY = "molbio:userRole";
@@ -108,6 +109,9 @@ function App() {
         { label: "Batch Closure", to: "/batch-closures" },
         { label: "Dispatch Details", to: "/dispatch" }
       );
+    }
+    if (role === "QC") {
+      base.push({ label: "QC Intake", to: "/qc" }, { label: "Dispatch Details", to: "/dispatch" });
     }
     return base;
   }, [role]);
@@ -334,7 +338,11 @@ function App() {
               />
               <Route
                 path="/dispatch"
-                element={role === "QA" ? <DispatchDetailsPage /> : <Navigate to="/dashboard" replace />}
+                element={role === "QA" || role === "QC" ? <DispatchDetailsPage /> : <Navigate to="/dashboard" replace />}
+              />
+              <Route
+                path="/qc"
+                element={role === "QC" ? <QcIntakePage /> : <Navigate to="/dashboard" replace />}
               />
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Routes>

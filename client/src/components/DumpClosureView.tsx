@@ -23,6 +23,14 @@ const DumpClosureView = ({ closure, disablePaper = false }: Props) => {
     | null;
   const detailRows = (closure.detailRows ?? []) as BatchClosureDetailRow[];
   const detailTotals = closure.detailTotals ?? null;
+  const flowSummary = closure.flowSummary ?? null;
+  const initialQuantity = Number(flowSummary?.initialBatchQuantity ?? closure.batchQuantity ?? 0);
+  const dumpRejections = Number(
+    flowSummary?.dumpRejections ?? closure.dumpTotalRejections ?? closure.totalRejections ?? 0
+  );
+  const forwardedQuantity = Number(
+    flowSummary?.remainingForMatrix ?? detailTotals?.remainingForNextStage ?? Math.max(initialQuantity - dumpRejections, 0)
+  );
 
   const content = (
     <Stack spacing={3}>
@@ -152,6 +160,32 @@ const DumpClosureView = ({ closure, disablePaper = false }: Props) => {
                 </TableCell>
               </TableRow>
             )}
+          </TableBody>
+        </Table>
+      </Stack>
+
+      <Stack spacing={1}>
+        <Typography variant="subtitle1">Stage Flow Summary</Typography>
+        <Table size="small">
+          <TableHead>
+            <TableRow>
+              <TableCell>Metric</TableCell>
+              <TableCell align="right">Quantity</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            <TableRow>
+              <TableCell>Initial Batch Quantity</TableCell>
+              <TableCell align="right">{initialQuantity}</TableCell>
+            </TableRow>
+            <TableRow>
+              <TableCell>Dump Rejections</TableCell>
+              <TableCell align="right">{dumpRejections}</TableCell>
+            </TableRow>
+            <TableRow>
+              <TableCell>Forwarded to Matrix</TableCell>
+              <TableCell align="right">{forwardedQuantity}</TableCell>
+            </TableRow>
           </TableBody>
         </Table>
       </Stack>
