@@ -1,0 +1,25 @@
+-- CreateTable
+CREATE TABLE "batch_closures" (
+    "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    "stage_type" TEXT NOT NULL DEFAULT 'DumpToAnnealing',
+    "lot_label" TEXT,
+    "lot_number" INTEGER,
+    "closure_given_by" TEXT NOT NULL,
+    "shift" TEXT NOT NULL,
+    "production_date" DATETIME NOT NULL,
+    "status" TEXT,
+    "total_accepted" INTEGER,
+    "total_annealing" INTEGER,
+    "line_clearance_datetime" DATETIME,
+    "line_closure_time" TEXT,
+    "batch_quantity" INTEGER,
+    "total_rejections" INTEGER,
+    "dump_total_rejections" INTEGER,
+    "remarks" TEXT,
+    "component_summary" TEXT,
+    "detail_rows" TEXT,
+    "detail_totals" TEXT,
+    "stage_data" TEXT,
+    "created_at" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" DATETIME NOT NULL
+);
