@@ -6,6 +6,63 @@ import {
   updateQcSummarySchema
 } from "../validation.js";
 
+type FlowSummary = Record<string, number> | null;
+
+let supportsFlowSummaryColumn: boolean | null = null;
+
+const ensureFlowSummarySupport = async () => {
+  if (supportsFlowSummaryColumn !== null) {
+    return supportsFlowSummaryColumn;
+  }
+
+  try {
+    const tableInfo = (await prisma.$queryRawUnsafe<any[]>("PRAGMA table_info('batch_closures')")) ?? [];
+    supportsFlowSummaryColumn = tableInfo.some((column) => column?.name === "flow_summary");
+  } catch (error) {
+    console.error("Unable to determine flow_summary column support", error);
+    supportsFlowSummaryColumn = false;
+  }
+
+  return supportsFlowSummaryColumn;
+};
+
+const normaliseDetailTotals = (detailTotals: any, detailRows: Array<any>) => {
+  if (detailTotals) {
+    return detailTotals;
+  }
+
+  if (!detailRows.length) {
+    return null;
+  }
+
+  return detailRows.reduce(
+    (acc, row) => ({
+      dumpInsertion: (acc.dumpInsertion ?? 0) + Number(row.dumpInsertion ?? 0),
+      acceptedOutput: (acc.acceptedOutput ?? 0) + Number(row.acceptedOutput ?? 0),
+      rejections: (acc.rejections ?? 0) + Number(row.rejections ?? 0),
+      annealing: (acc.annealing ?? 0) + Number(row.annealing ?? 0)
+    }),
+    { dumpInsertion: 0, acceptedOutput: 0, rejections: 0, annealing: 0 }
+  );
+};
+
+const computeFlowSummaryForPayload = (
+  payload: any,
+  detailTotals: any,
+  stageData: any
+): FlowSummary => {
+  const pseudoClosure = {
+    stageType: payload.stageType,
+    batchQuantity:
+      payload.batchQuantity ?? detailTotals?.batchInput ?? payload.flowSummary?.initialBatchQuantity ?? null,
+    totalRejections: payload.totalRejections ?? null,
+    dumpTotalRejections: payload.dumpTotalRejections ?? null,
+    totalAnnealing: payload.totalAnnealing ?? null
+  };
+
+  return computeFlowSummary(pseudoClosure, detailTotals, stageData, payload.flowSummary ?? null);
+};
+
 const router = Router();
 
 router.get("/", async (_req, res, next) => {
@@ -38,10 +95,15 @@ router.post("/", async (req, res, next) => {
   try {
     const payload = createBatchClosureSchema.parse(req.body);
 
-    const parsedDetailRows = (payload.detailRows ?? []).filter((row) => {
+    const parsedDetailRows = (payload.detailRows ?? []).filter((row: any) => {
       const numericValues = [row.dumpInsertion, row.acceptedOutput, row.rejections, row.annealing];
       return numericValues.some((value) => value && value !== 0);
     });
+
+    const detailTotals = normaliseDetailTotals(payload.detailTotals ?? null, parsedDetailRows);
+    const stageData = payload.stageData ?? null;
+    const flowSummaryForStorage = computeFlowSummaryForPayload(payload, detailTotals, stageData);
+    const shouldPersistFlowSummary = await ensureFlowSummarySupport();
 
     const createData: Record<string, unknown> = {
       stageType: payload.stageType,
@@ -62,13 +124,17 @@ router.post("/", async (req, res, next) => {
       remarks: payload.remarks,
       componentSummary: payload.componentSummary ? JSON.stringify(payload.componentSummary) : null,
       detailRows: parsedDetailRows.length ? JSON.stringify(parsedDetailRows) : null,
-      detailTotals: payload.detailTotals ? JSON.stringify(payload.detailTotals) : null,
+      detailTotals: detailTotals ? JSON.stringify(detailTotals) : null,
       stageData: payload.stageData ? JSON.stringify(payload.stageData) : null
     };
 
     // Prisma Client in this repository was generated without the optional `line` field,
     // so we assign it dynamically to avoid type errors while still persisting the value.
     createData.line = payload.line ?? null;
+
+    if (shouldPersistFlowSummary) {
+      createData.flowSummary = flowSummaryForStorage ? JSON.stringify(flowSummaryForStorage) : null;
+    }
 
     const closure = await prisma.batchClosure.create({
       data: createData as any
@@ -105,6 +171,15 @@ router.patch("/:id/qc", async (req, res, next) => {
     const qcRetained = Number(payload.qcRetained ?? 0);
     const dispatchQuantity = Math.max(totalOutput - qcConsumed - qcRetained, 0);
 
+    const detailTotals = closure.detailTotals ? JSON.parse(closure.detailTotals) : null;
+    const existingFlowSummary = parseJson((closure as any).flowSummary);
+    const updatedFlowSummary = computeFlowSummary(
+      { ...closure, totalAnnealing: totalOutput },
+      detailTotals,
+      stageData,
+      existingFlowSummary
+    );
+
     const updatedStageData = {
       ...stageData,
       totals: {
@@ -121,12 +196,18 @@ router.patch("/:id/qc", async (req, res, next) => {
       }
     };
 
+    const updateData: Record<string, unknown> = {
+      totalAnnealing: totalOutput,
+      stageData: JSON.stringify(updatedStageData)
+    };
+
+    if (await ensureFlowSummarySupport()) {
+      updateData.flowSummary = updatedFlowSummary ? JSON.stringify(updatedFlowSummary) : null;
+    }
+
     const updated = await prisma.batchClosure.update({
       where: { id: params.id },
-      data: {
-        totalAnnealing: totalOutput,
-        stageData: JSON.stringify(updatedStageData)
-      }
+      data: updateData as any
     });
 
     res.json(serializeClosure(updated));
@@ -149,7 +230,8 @@ function serializeClosure(closure: any) {
   const detailRows = parseJson(closure.detailRows);
   const detailTotals = parseJson(closure.detailTotals);
   const stageData = parseJson(closure.stageData);
-  const flowSummary = computeFlowSummary(closure, detailTotals, stageData);
+  const persistedFlowSummary = parseJson((closure as any).flowSummary);
+  const flowSummary = computeFlowSummary(closure, detailTotals, stageData, persistedFlowSummary);
 
   return {
     id: closure.id,
@@ -195,7 +277,7 @@ function parseJson(value: unknown) {
   }
 }
 
-function computeFlowSummary(closure: any, detailTotals: any, stageData: any) {
+function computeFlowSummary(closure: any, detailTotals: any, stageData: any, existing?: any) {
   const summary: Record<string, number> = {};
   let hasValue = false;
 
@@ -210,6 +292,10 @@ function computeFlowSummary(closure: any, detailTotals: any, stageData: any) {
     summary[key] = numeric;
     hasValue = true;
   };
+
+  if (existing && typeof existing === "object") {
+    Object.entries(existing).forEach(([key, value]) => assignIfPresent(key, value));
+  }
 
   const batchQuantity = closure.batchQuantity ?? detailTotals?.batchInput;
   assignIfPresent("initialBatchQuantity", batchQuantity);
