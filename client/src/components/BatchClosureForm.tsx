@@ -122,7 +122,8 @@ function DumpClosureForm({ batchNumber, line, lotIndex, onSubmitted }: DumpClosu
     handleSubmit,
     formState: { errors },
     watch,
-    reset
+    reset,
+    setValue
   } = useForm<FormValues>({
     defaultValues: computedDefaults
   });
@@ -172,6 +173,10 @@ function DumpClosureForm({ batchNumber, line, lotIndex, onSubmitted }: DumpClosu
       }
     );
 
+    const batchInput = Number(values.batchQuantity) || 0;
+    const dumpRejections = Number(values.dumpTotalRejections || values.totalRejections || 0);
+    const remainingForMatrix = Math.max(batchInput - dumpRejections, 0);
+
     const payload: BatchClosurePayload = {
       stageType: "DumpToAnnealing",
       batchNumber,
@@ -205,32 +210,72 @@ function DumpClosureForm({ batchNumber, line, lotIndex, onSubmitted }: DumpClosu
         }
       },
       detailRows,
-      detailTotals
+      detailTotals: {
+        ...detailTotals,
+        batchInput,
+        remainingForNextStage: remainingForMatrix
+      },
+      flowSummary: {
+        initialBatchQuantity: batchInput || undefined,
+        dumpRejections: dumpRejections || undefined,
+        remainingForMatrix: remainingForMatrix || undefined,
+        matrixInput: remainingForMatrix || undefined
+      }
     };
 
     mutation.mutate(payload);
   };
 
-  const detailRowsWatch = watch("detailRows") ?? [];
+  const detailRowsWatch = (watch("detailRows", []) as BatchClosureDetailRow[] | undefined) ?? [];
+  const totalAcceptedField = watch("totalAccepted") as number | string | undefined;
+  const totalAnnealingField = watch("totalAnnealing") as number | string | undefined;
+  const totalRejectionsField = watch("totalRejections") as number | string | undefined;
+  const dumpTotalRejectionsField = watch("dumpTotalRejections") as number | string | undefined;
 
-  const detailTotalsDisplay = useMemo(
-    () =>
-      detailRowsWatch.reduce(
-        (acc, row) => ({
-          dumpInsertion: acc.dumpInsertion + Number(row.dumpInsertion || 0),
-          acceptedOutput: acc.acceptedOutput + Number(row.acceptedOutput || 0),
-          rejections: acc.rejections + Number(row.rejections || 0),
-          annealing: acc.annealing + Number(row.annealing || 0)
-        }),
-        {
-          dumpInsertion: 0,
-          acceptedOutput: 0,
-          rejections: 0,
-          annealing: 0
-        }
-      ),
-    [detailRowsWatch]
+  const detailTotalsDisplay = detailRowsWatch.reduce(
+    (acc, row) => ({
+      dumpInsertion: acc.dumpInsertion + Number(row.dumpInsertion || 0),
+      acceptedOutput: acc.acceptedOutput + Number(row.acceptedOutput || 0),
+      rejections: acc.rejections + Number(row.rejections || 0),
+      annealing: acc.annealing + Number(row.annealing || 0)
+    }),
+    {
+      dumpInsertion: 0,
+      acceptedOutput: 0,
+      rejections: 0,
+      annealing: 0
+    }
   );
+
+  useEffect(() => {
+    const acceptedOutput = detailTotalsDisplay.acceptedOutput || 0;
+    if (Number(totalAcceptedField ?? 0) !== acceptedOutput) {
+      setValue("totalAccepted", acceptedOutput, { shouldDirty: true, shouldValidate: false });
+    }
+
+    const annealing = detailTotalsDisplay.annealing || 0;
+    if (Number(totalAnnealingField ?? 0) !== annealing) {
+      setValue("totalAnnealing", annealing, { shouldDirty: true, shouldValidate: false });
+    }
+
+    const rejections = detailTotalsDisplay.rejections || 0;
+    if (Number(totalRejectionsField ?? 0) !== rejections) {
+      setValue("totalRejections", rejections, { shouldDirty: true, shouldValidate: false });
+    }
+
+    if (Number(dumpTotalRejectionsField ?? 0) !== rejections) {
+      setValue("dumpTotalRejections", rejections, { shouldDirty: true, shouldValidate: false });
+    }
+  }, [
+    detailTotalsDisplay.acceptedOutput,
+    detailTotalsDisplay.annealing,
+    detailTotalsDisplay.rejections,
+    dumpTotalRejectionsField,
+    setValue,
+    totalAcceptedField,
+    totalAnnealingField,
+    totalRejectionsField
+  ]);
 
   const materialRowsConfig: Array<{ label: string; totalName: Path<FormValues>; leftoverName: Path<FormValues>; inlineName: Path<FormValues> }> = [
     {
@@ -350,11 +395,11 @@ function DumpClosureForm({ batchNumber, line, lotIndex, onSubmitted }: DumpClosu
                   <Controller
                     name="productionDate"
                     control={control}
-                    rules={{ required: "Production date is required" }}
+                    rules={{ required: "Batch closure date is required" }}
                     render={({ field }) => (
                       <TextField
                         {...field}
-                        label="Production Date"
+                        label="Batch Closure Date"
                         placeholder="dd/MM/yyyy"
                         fullWidth
                         error={!!errors.productionDate}
@@ -540,16 +585,16 @@ function DumpClosureForm({ batchNumber, line, lotIndex, onSubmitted }: DumpClosu
                     ))}
                     <TableRow sx={{ bgcolor: "rgba(0,0,0,0.04)" }}>
                       <TableCell>
-                        <strong>{detailTotalsDisplay.dumpInsertion}</strong>
+                        <strong>{detailTotalsDisplay.dumpInsertion ?? 0}</strong>
                       </TableCell>
                       <TableCell align="right">
-                        <strong>{detailTotalsDisplay.acceptedOutput}</strong>
+                        <strong>{detailTotalsDisplay.acceptedOutput ?? 0}</strong>
                       </TableCell>
                       <TableCell align="right">
-                        <strong>{detailTotalsDisplay.rejections}</strong>
+                        <strong>{detailTotalsDisplay.rejections ?? 0}</strong>
                       </TableCell>
                       <TableCell align="right">
-                        <strong>{detailTotalsDisplay.annealing}</strong>
+                        <strong>{detailTotalsDisplay.annealing ?? 0}</strong>
                       </TableCell>
                     </TableRow>
                   </TableBody>

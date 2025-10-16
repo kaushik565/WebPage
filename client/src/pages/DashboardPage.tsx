@@ -17,6 +17,12 @@ import {
   Paper,
   Select,
   Stack,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
   TextField,
   Typography
 } from "@mui/material";
@@ -33,6 +39,7 @@ import {
 } from "../api.ts";
 import DumpClosureView from "../components/DumpClosureView.tsx";
 import MatrixClosureView from "../components/MatrixClosureView.tsx";
+import { aggregateClosuresByBatch } from "../utils/closureFlow.ts";
 import { format, parse } from "date-fns";
 
 const LINE_LIST = ["A", "B", "C", "D", "E", "G"] as const;
@@ -183,6 +190,8 @@ function DashboardPage() {
         .sort((a, b) => (b.productionDate || "").localeCompare(a.productionDate || "")),
     [batchClosures]
   );
+
+  const flowRows = useMemo(() => aggregateClosuresByBatch(batchClosures), [batchClosures]);
 
   const dumpTotals = useMemo(
     () => ({
@@ -476,6 +485,51 @@ function DashboardPage() {
           ) : (
             <Alert severity="info">No data for the selected range.</Alert>
           )}
+        </Paper>
+      )}
+
+      {!isLoading && !isError && flowRows.length > 0 && (
+        <Paper sx={{ p: 3 }}>
+          <Typography variant="h6" gutterBottom>
+            Batch Flow Readiness
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Tracks how each batch progresses from dump rejects through QC deductions. Dispatch quantity reflects pouch output minus QC consumption and retained samples.
+          </Typography>
+          <TableContainer component={Paper} variant="outlined">
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell>Batch</TableCell>
+                  <TableCell align="right">Initial Qty</TableCell>
+                  <TableCell align="right">Dump Rejects</TableCell>
+                  <TableCell align="right">Matrix Input</TableCell>
+                  <TableCell align="right">Matrix Rejects</TableCell>
+                  <TableCell align="right">Pouch Output</TableCell>
+                  <TableCell align="right">QC Consumed</TableCell>
+                  <TableCell align="right">QC Retained</TableCell>
+                  <TableCell align="right">Dispatch Qty</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {flowRows.slice(0, 5).map((row) => (
+                  <TableRow key={row.batchNumber}>
+                    <TableCell sx={{ fontWeight: 600 }}>{row.batchNumber}</TableCell>
+                    <TableCell align="right">{row.initialBatchQuantity.toLocaleString()}</TableCell>
+                    <TableCell align="right">{row.dumpRejections.toLocaleString()}</TableCell>
+                    <TableCell align="right">{row.matrixInput.toLocaleString()}</TableCell>
+                    <TableCell align="right">{row.matrixRejections.toLocaleString()}</TableCell>
+                    <TableCell align="right">{row.pouchOutput.toLocaleString()}</TableCell>
+                    <TableCell align="right">{row.qcConsumed.toLocaleString()}</TableCell>
+                    <TableCell align="right">{row.qcRetained.toLocaleString()}</TableCell>
+                    <TableCell align="right" sx={{ fontWeight: 600 }}>
+                      {row.dispatchQuantity.toLocaleString()}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
         </Paper>
       )}
 

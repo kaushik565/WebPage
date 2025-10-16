@@ -75,6 +75,26 @@ export type MatrixDetailRow = {
   yieldPercent: number;
 };
 
+export type MatrixQcSummary = {
+  totalOutputForQc?: number;
+  qcConsumed: number;
+  qcRetained: number;
+  dispatchQuantity: number;
+};
+
+export type BatchFlowSummary = {
+  initialBatchQuantity?: number;
+  dumpRejections?: number;
+  remainingForMatrix?: number;
+  remainingForNextStage?: number;
+  matrixInput?: number;
+  matrixRejections?: number;
+  pouchOutput?: number;
+  qcConsumed?: number;
+  qcRetained?: number;
+  dispatchQuantity?: number;
+};
+
 export type MatrixStageData = {
   cartridgeType: "NC" | "L" | "LR" | "UNKNOWN";
   line: string;
@@ -108,7 +128,11 @@ export type MatrixStageData = {
     totalAccepted?: number;
     totalOutput?: number;
     totalRejections?: number;
+    matrixInput?: number;
+    pouchOutput?: number;
+    remainingForNextStage?: number;
   };
+  qcSummary?: MatrixQcSummary;
 };
 
 export type BatchClosurePayload = {
@@ -140,7 +164,10 @@ export type BatchClosurePayload = {
     acceptedOutput?: number;
     rejections?: number;
     annealing?: number;
+    remainingForNextStage?: number;
+    batchInput?: number;
   };
+  flowSummary?: BatchFlowSummary | null;
   stageData?: MatrixStageData | null;
 };
 
@@ -149,6 +176,13 @@ export type BatchClosure = BatchClosurePayload & {
   createdAt: string;
   updatedAt: string;
   detailRows?: BatchClosureDetailRow[] | null;
+  flowSummary?: BatchFlowSummary | null;
+};
+
+export type UpdateQcSummaryPayload = {
+  qcConsumed: number;
+  qcRetained: number;
+  totalOutput?: number;
 };
 
 export type UploadError = {
@@ -204,6 +238,11 @@ export const fetchBatchSummary = async (batchNo: string) => {
 
 export const fetchBatchClosures = async () => {
   const { data } = await api.get<BatchClosure[]>("/batch-closures");
+  return data;
+};
+
+export const updateMatrixQcSummary = async (id: number, payload: UpdateQcSummaryPayload) => {
+  const { data } = await api.patch<BatchClosure>(`/batch-closures/${id}/qc`, payload);
   return data;
 };
 
